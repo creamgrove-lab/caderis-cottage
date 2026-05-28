@@ -151,6 +151,7 @@ function bindEvents() {
   el.deleteBoxForm.addEventListener("submit", confirmDeleteBox);
   el.soundToggle.addEventListener("click", toggleMusic);
   el.fillBoxTestButton.addEventListener("click", fillBoxForTest);
+  el.enterButton.addEventListener("click", unlockMusic);
 }
 
 function renderIntro() {
@@ -788,11 +789,8 @@ function showToast(text) {
 
 async function toggleMusic() {
   if (el.bgMusic.paused) {
-    try {
-      await el.bgMusic.play();
-      el.soundToggle.textContent = "🔊";
-      el.soundToggle.setAttribute("aria-label", "暫停背景音樂");
-    } catch {
+    const started = await playMusic();
+    if (!started) {
       showToast("目前沒有可播放的音檔，之後可把 music.mp3 放進 assets 資料夾。");
     }
     return;
@@ -809,27 +807,33 @@ function setupMusic() {
   el.bgMusic.autoplay = true;
   el.bgMusic.muted = false;
   el.bgMusic.load();
-  el.bgMusic.play()
-    .then(() => {
-      el.soundToggle.textContent = "🔊";
-      el.soundToggle.setAttribute("aria-label", "暫停背景音樂");
-    })
-    .catch(() => {
-      const startAfterFirstTouch = async () => {
-        try {
-          await el.bgMusic.play();
-          el.soundToggle.textContent = "🔊";
-          el.soundToggle.setAttribute("aria-label", "暫停背景音樂");
-        } catch {
-          el.soundToggle.textContent = "🔇";
-        }
-        window.removeEventListener("pointerdown", startAfterFirstTouch);
-        window.removeEventListener("keydown", startAfterFirstTouch);
-      };
+  playMusic().then((started) => {
+    if (started) return;
+    el.soundToggle.textContent = "🔇";
+    el.soundToggle.setAttribute("aria-label", "點一下播放背景音樂");
+    window.addEventListener("click", unlockMusic, { once: true });
+    window.addEventListener("touchstart", unlockMusic, { once: true });
+    window.addEventListener("pointerup", unlockMusic, { once: true });
+    window.addEventListener("keydown", unlockMusic, { once: true });
+  });
+}
 
-      window.addEventListener("pointerdown", startAfterFirstTouch, { once: true });
-      window.addEventListener("keydown", startAfterFirstTouch, { once: true });
-    });
+async function unlockMusic() {
+  await playMusic();
+}
+
+async function playMusic() {
+  try {
+    el.bgMusic.volume = MUSIC_VOLUME;
+    await el.bgMusic.play();
+    el.soundToggle.textContent = "🔊";
+    el.soundToggle.setAttribute("aria-label", "暫停背景音樂");
+    return true;
+  } catch {
+    el.soundToggle.textContent = "🔇";
+    el.soundToggle.setAttribute("aria-label", "播放背景音樂");
+    return false;
+  }
 }
 
 function escapeHtml(value) {
