@@ -193,7 +193,7 @@ function usernameToEmail(username) {
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replaceAll("=", "");
-  return `u-${encoded}@caderis.local`;
+  return `u-${encoded}@caderis-cottage.app`;
 }
 
 function toggleAuth(mode) {
@@ -222,7 +222,9 @@ async function register(event) {
   });
 
   if (signUpError || !signUpData.user) {
-    el.registerMessage.textContent = "這個小屋認證號可能已經被使用，或密語不符合規則。";
+    el.registerMessage.textContent = signUpError?.message?.toLowerCase().includes("registered")
+      ? "這個小屋認證號已經被使用了。請換一個認證號，或改用登入。"
+      : `建立身分失敗：${signUpError?.message || "請確認密語至少 6 位，並稍後再試。"}`;
     return;
   }
 
@@ -265,6 +267,9 @@ async function login(event) {
 
   authUser = loginData.user;
   await loadProfile();
+  if (!profile) {
+    await createMissingProfile(username);
+  }
   await loadBoxes();
   el.loginForm.reset();
   showToast(`${profile.nickname}，門為你打開了。`);
@@ -286,9 +291,29 @@ async function loadProfile() {
     .from("caderis_profiles")
     .select("*")
     .eq("id", authUser.id)
-    .single();
-  if (error) throw error;
+    .maybeSingle();
+  if (error) {
+    showToast("讀取身分時被木門擋了一下，請確認 SQL 已執行。");
+    profile = null;
+    return;
+  }
   profile = data;
+}
+
+async function createMissingProfile(username) {
+  const nickname = username;
+  const nextProfile = {
+    id: authUser.id,
+    username,
+    username_norm: normalizeUsername(username),
+    nickname,
+  };
+  const { error } = await supabaseClient.from("caderis_profiles").insert(nextProfile);
+  if (error) {
+    showToast("登入成功，但小屋身分補建失敗。請確認 RLS SQL 已執行。");
+    return;
+  }
+  profile = nextProfile;
 }
 
 async function loadBoxes() {
@@ -791,7 +816,7 @@ async function toggleMusic() {
   if (el.bgMusic.paused) {
     const started = await playMusic();
     if (!started) {
-      showToast("目前沒有可播放的音檔，之後可把 music.mp3 放進 assets 資料夾。");
+      showToast("音樂還沒載入成功。請確認 GitHub Pages 上能開啟 assets/music.mp3。");
     }
     return;
   }
@@ -806,6 +831,10 @@ function setupMusic() {
   el.bgMusic.loop = true;
   el.bgMusic.autoplay = true;
   el.bgMusic.muted = false;
+  el.bgMusic.addEventListener("error", () => {
+    el.soundToggle.textContent = "🔇";
+    el.soundToggle.setAttribute("aria-label", "音樂檔尚未載入成功");
+  });
   el.bgMusic.load();
   playMusic().then((started) => {
     if (started) return;
