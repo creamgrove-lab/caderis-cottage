@@ -13,6 +13,23 @@
 
 把這個資料夾裡的檔案推到 GitHub repo 後，可在 GitHub Pages 選擇部署根目錄或把檔案放到 repo 根目錄。
 
-## Supabase 第二版提醒
+## Supabase 設定
 
-第一版尚未連 Supabase。之後若要接資料庫，前端只能放 Supabase Project URL 與 anon public key。不要把 `service_role` key 或任何私密金鑰放在 GitHub、GitHub Pages、前端 JavaScript 裡。
+這一版使用 Supabase Auth 與 RLS。前端只放 Project URL 與 publishable key，不放 `service_role` key。
+
+1. 進入 Supabase project。
+2. Authentication → Providers → Email，開啟 Email。
+3. 測試階段建議先關閉 Confirm email，否則註冊後不會立刻登入，資料表也無法建立 profile。
+4. Authentication → URL Configuration：
+   - Site URL 填 GitHub Pages 網址。
+   - Redirect URLs 也加入 GitHub Pages 網址。
+5. SQL Editor 貼上並執行 `supabase-caderis.sql`。
+6. 上傳 `index.html`、`style.css`、`script.js`、`README.md`、`supabase-caderis.sql` 與 `assets/music.mp3`。
+
+資料表：
+
+- `caderis_profiles`
+- `caderis_boxes`
+- `caderis_gems`
+
+RLS 已限制使用者只能讀寫自己的 profile、木匣與寶石。

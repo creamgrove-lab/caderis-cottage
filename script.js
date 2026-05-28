@@ -1,10 +1,11 @@
-const USERS_KEY = "caderis_users";
-const CURRENT_USER_KEY = "caderis_current_user";
-const BOXES_KEY = "caderis_boxes";
+const SUPABASE_URL = "https://gvzqhwnjuxmnoayytytz.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Cer_OmdZcW97rJwSXPhs-Q_gXI8woLj";
 const SELECTED_BOX_KEY = "caderis_selected_box";
 const FIVE_HOURS = 5 * 60 * 60 * 1000;
 const MUSIC_VOLUME = 0.22;
 const DEV_MODE = new URLSearchParams(location.search).get("dev") === "1";
+
+const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const introCopy = `你最近為想離開一間公司、一段關係，或某件事感到猶豫不前嗎？
 
@@ -48,6 +49,9 @@ const oracleNotes = [
 
 let selectedReason = null;
 let toastTimer = null;
+let authUser = null;
+let profile = null;
+let stateBoxes = [];
 
 const el = {
   sections: {
@@ -105,89 +109,26 @@ const el = {
   bgMusic: document.querySelector("#bgMusic"),
 };
 
-function read(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function write(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function users() {
-  return read(USERS_KEY, []);
-}
-
-function boxes() {
-  return read(BOXES_KEY, []).map(refreshBox);
-}
-
-function currentUsername() {
-  return localStorage.getItem(CURRENT_USER_KEY);
-}
-
-function currentUser() {
-  const username = currentUsername();
-  return users().find((user) => user.username === username) || null;
-}
-
-function userBoxes(username = currentUsername()) {
-  return boxes().filter((box) => box.ownerUsername === username);
-}
-
-function selectedBox(username = currentUsername()) {
-  const owned = userBoxes(username);
-  const selectedId = localStorage.getItem(SELECTED_BOX_KEY);
-  return owned.find((box) => box.id === selectedId) || owned.find((box) => box.status === "active") || owned[0] || null;
-}
-
-function activeBox(username = currentUsername()) {
-  const box = selectedBox(username);
-  return box?.status === "active" ? box : null;
-}
-
-function showSection(name) {
-  Object.entries(el.sections).forEach(([key, section]) => {
-    section.classList.toggle("is-active", key === name);
-  });
-}
-
-function boot() {
+async function boot() {
   renderReasons();
   bindEvents();
   renderIntro();
-  route();
-}
+  setupMusic();
+  setupPasswordToggles();
 
-function route() {
-  const user = currentUser();
-  if (!user) {
+  if (!supabaseClient) {
+    showToast("Supabase 尚未載入，請確認網路與 CDN。");
     showSection("welcome");
     return;
   }
 
-  const box = selectedBox(user.username);
-  if (!box) {
-    el.backToMainButton.hidden = true;
-    showSection("createBox");
-    return;
+  const { data } = await supabaseClient.auth.getSession();
+  authUser = data.session?.user || null;
+  if (authUser) {
+    await loadProfile();
+    await loadBoxes();
   }
-
-  showSection("main");
-  renderMain(user, box);
-}
-
-function renderIntro() {
-  const paragraphs = introCopy.split(/\n{2,}/);
-  el.introText.innerHTML = paragraphs
-    .map((line, index) => {
-      const text = line.replaceAll("\n", "<br />");
-      return `<p class="intro-line" style="animation-delay: ${index * 900}ms">${text}</p>`;
-    })
-    .join("");
+  route();
 }
 
 function bindEvents() {
@@ -196,7 +137,6 @@ function bindEvents() {
     el.introText.hidden = true;
     el.exitMessage.hidden = false;
   });
-
   el.showLogin.addEventListener("click", () => toggleAuth("login"));
   el.showRegister.addEventListener("click", () => toggleAuth("register"));
   el.registerForm.addEventListener("submit", register);
@@ -211,8 +151,48 @@ function bindEvents() {
   el.deleteBoxForm.addEventListener("submit", confirmDeleteBox);
   el.soundToggle.addEventListener("click", toggleMusic);
   el.fillBoxTestButton.addEventListener("click", fillBoxForTest);
-  setupMusic();
-  setupPasswordToggles();
+}
+
+function renderIntro() {
+  el.introText.innerHTML = introCopy
+    .split(/\n{2,}/)
+    .map((line, index) => `<p class="intro-line" style="animation-delay: ${index * 900}ms">${line.replaceAll("\n", "<br />")}</p>`)
+    .join("");
+}
+
+function showSection(name) {
+  Object.entries(el.sections).forEach(([key, section]) => {
+    section.classList.toggle("is-active", key === name);
+  });
+}
+
+function route() {
+  if (!authUser || !profile) {
+    showSection("welcome");
+    return;
+  }
+
+  const box = selectedBox();
+  if (!box) {
+    el.backToMainButton.hidden = true;
+    showSection("createBox");
+    return;
+  }
+
+  showSection("main");
+  renderMain(box);
+}
+
+function normalizeUsername(username) {
+  return username.trim().toLocaleLowerCase();
+}
+
+function usernameToEmail(username) {
+  const encoded = btoa(unescape(encodeURIComponent(normalizeUsername(username))))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+  return `u-${encoded}@caderis.local`;
 }
 
 function toggleAuth(mode) {
@@ -222,7 +202,7 @@ function toggleAuth(mode) {
   el.loginMessage.textContent = "";
 }
 
-function register(event) {
+async function register(event) {
   event.preventDefault();
   const data = new FormData(el.registerForm);
   const username = data.get("username").trim();
@@ -230,54 +210,113 @@ function register(event) {
   const nickname = data.get("nickname").trim();
 
   if (!username || !password || !nickname) return;
-  if (password.length < 4) {
-    el.registerMessage.textContent = "登入密語至少需要 4 位。";
-    return;
-  }
-  if (users().some((user) => user.username.trim().toLocaleLowerCase() === username.toLocaleLowerCase())) {
-    el.registerMessage.textContent = "這個小屋認證號已經被使用了。";
+  if (password.length < 6) {
+    el.registerMessage.textContent = "為了安全，登入密語至少需要 6 位。";
     return;
   }
 
-  const nextUsers = [
-    ...users(),
-    {
-      id: `user-${Date.now()}`,
-      username,
-      password,
-      nickname,
-    },
-  ];
-  write(USERS_KEY, nextUsers);
-  localStorage.setItem(CURRENT_USER_KEY, username);
+  const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({
+    email: usernameToEmail(username),
+    password,
+  });
+
+  if (signUpError || !signUpData.user) {
+    el.registerMessage.textContent = "這個小屋認證號可能已經被使用，或密語不符合規則。";
+    return;
+  }
+
+  authUser = signUpData.user;
+  const nextProfile = {
+    id: authUser.id,
+    username,
+    username_norm: normalizeUsername(username),
+    nickname,
+  };
+
+  const { error: profileError } = await supabaseClient.from("caderis_profiles").insert(nextProfile);
+  if (profileError) {
+    el.registerMessage.textContent = "身分建立時被木門擋了一下，請確認 SQL 與 Auth 設定。";
+    return;
+  }
+
+  profile = nextProfile;
+  stateBoxes = [];
   el.registerForm.reset();
   showToast("卡德莉絲記下了你的身分。");
   route();
 }
 
-function login(event) {
+async function login(event) {
   event.preventDefault();
   const data = new FormData(el.loginForm);
   const username = data.get("username").trim();
   const password = data.get("password").trim();
-  const user = users().find((entry) => entry.username === username && entry.password === password);
 
-  if (!user) {
+  const { data: loginData, error } = await supabaseClient.auth.signInWithPassword({
+    email: usernameToEmail(username),
+    password,
+  });
+
+  if (error || !loginData.user) {
     el.loginMessage.textContent = "認證號或密語不太對，請再試一次。";
     return;
   }
 
-  localStorage.setItem(CURRENT_USER_KEY, username);
+  authUser = loginData.user;
+  await loadProfile();
+  await loadBoxes();
   el.loginForm.reset();
-  showToast(`${user.nickname}，門為你打開了。`);
+  showToast(`${profile.nickname}，門為你打開了。`);
   route();
 }
 
-function logout() {
-  localStorage.removeItem(CURRENT_USER_KEY);
+async function logout() {
+  await supabaseClient.auth.signOut();
+  authUser = null;
+  profile = null;
+  stateBoxes = [];
   localStorage.removeItem(SELECTED_BOX_KEY);
   showSection("welcome");
   showToast("卡德莉絲替你把門輕輕帶上。");
+}
+
+async function loadProfile() {
+  const { data, error } = await supabaseClient
+    .from("caderis_profiles")
+    .select("*")
+    .eq("id", authUser.id)
+    .single();
+  if (error) throw error;
+  profile = data;
+}
+
+async function loadBoxes() {
+  const { data: boxesData, error: boxesError } = await supabaseClient
+    .from("caderis_boxes")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (boxesError) throw boxesError;
+
+  const { data: gemsData, error: gemsError } = await supabaseClient
+    .from("caderis_gems")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (gemsError) throw gemsError;
+
+  stateBoxes = boxesData.map((box) => normalizeBox({
+    ...box,
+    gems: gemsData.filter((gem) => gem.box_id === box.id).map(normalizeGem),
+  }));
+}
+
+function selectedBox() {
+  const selectedId = localStorage.getItem(SELECTED_BOX_KEY);
+  return stateBoxes.find((box) => box.id === selectedId) || stateBoxes.find((box) => box.status === "active") || stateBoxes[0] || null;
+}
+
+function activeBox() {
+  const box = selectedBox();
+  return box?.status === "active" ? box : null;
 }
 
 function showCreateAnotherBox() {
@@ -285,59 +324,58 @@ function showCreateAnotherBox() {
   showSection("createBox");
 }
 
-function createBox(event) {
+async function createBox(event) {
   event.preventDefault();
-  const user = currentUser();
-  if (!user) return;
+  if (!authUser) return;
 
   const data = new FormData(el.boxForm);
   const mode = data.get("mode");
   const config = boxModes[mode];
-  const box = {
-    id: `box-${Date.now()}`,
-    ownerUsername: user.username,
+  const payload = {
+    owner_id: authUser.id,
     title: data.get("title").trim(),
-    targetType: data.get("targetType"),
+    target_type: data.get("targetType"),
     alias: data.get("alias").trim(),
     mode,
-    maxGems: config.maxGems,
-    gems: [],
+    max_gems: config.maxGems,
     status: "active",
-    createdAt: new Date().toISOString(),
   };
 
-  write(BOXES_KEY, [...boxes(), box]);
-  localStorage.setItem(SELECTED_BOX_KEY, box.id);
+  const { data: created, error } = await supabaseClient
+    .from("caderis_boxes")
+    .insert(payload)
+    .select()
+    .single();
+  if (error) {
+    showToast("木匣建立失敗，請確認 Supabase SQL 已執行。");
+    return;
+  }
+
+  localStorage.setItem(SELECTED_BOX_KEY, created.id);
   el.boxForm.reset();
+  await loadBoxes();
   showToast("木匣已放到你的桌前。");
   route();
 }
 
-function renderMain(user, box) {
-  const refreshed = refreshBox(box);
-  saveBox(refreshed);
-  const count = refreshed.gems.length;
-  const mode = boxModes[refreshed.mode];
-
-  el.userStatus.textContent = `${user.nickname} 在小屋`;
-  el.boxTitle.textContent = refreshed.title;
-  el.boxMeta.textContent = `${mode.label}｜${count} / ${refreshed.maxGems} 顆寶石｜關於 ${refreshed.targetType}「${refreshed.alias}」`;
-  el.boxState.textContent = `狀態：${boxStateLabel(count, refreshed.maxGems)}`;
-  el.boxStage.classList.toggle("is-full", count >= refreshed.maxGems);
-  renderGemGrid(refreshed);
-  renderDailyAction(refreshed);
-  renderUndo(refreshed);
-  renderDevPanel(refreshed);
-  renderBoxLibrary(user.username, refreshed.id);
+function renderMain(box) {
+  const count = box.gems.length;
+  const mode = boxModes[box.mode];
+  el.userStatus.textContent = `${profile.nickname} 在小屋`;
+  el.boxTitle.textContent = box.title;
+  el.boxMeta.textContent = `${mode.label}｜${count} / ${box.maxGems} 顆寶石｜關於 ${box.targetType}「${box.alias}」`;
+  el.boxState.textContent = `狀態：${boxStateLabel(count, box.maxGems)}`;
+  el.boxStage.classList.toggle("is-full", count >= box.maxGems);
+  renderGemGrid(box);
+  renderDailyAction(box);
+  renderUndo(box);
+  renderDevPanel(box);
+  renderBoxLibrary(box.id);
   renderOracle();
 
-  if (count >= refreshed.maxGems && refreshed.status === "active") {
+  if (count >= box.maxGems && box.status === "active") {
     setTimeout(() => showModal(el.fullModal), 250);
   }
-}
-
-function renderDevPanel(box) {
-  el.devPanel.hidden = !DEV_MODE || box.gems.length >= box.maxGems;
 }
 
 function renderGemGrid(box) {
@@ -348,7 +386,6 @@ function renderGemGrid(box) {
     const slot = document.createElement("div");
     slot.className = "gem-slot";
     const gem = box.gems[index];
-
     if (gem) {
       const reason = reasons.find((entry) => entry.colorType === gem.colorType) || reasons.at(-1);
       slot.classList.add("has-gem");
@@ -369,19 +406,8 @@ function renderGemGrid(box) {
         }
       });
     }
-
     el.gemGrid.append(slot);
   }
-}
-
-function showGemDetail(gem) {
-  const reason = reasons.find((entry) => entry.colorType === gem.colorType) || reasons.at(-1);
-  el.gemDetailStone.style.setProperty("--gem-color", reason.color);
-  el.gemDetailStone.style.setProperty("--gem-glow", reason.glow);
-  el.gemDetailReason.textContent = `原因：${gem.reason}｜${reason.stone}`;
-  el.gemDetailTime.textContent = `放入時間：${formatDateTime(gem.createdAt)}`;
-  el.gemDetailNote.textContent = gem.note ? `留下的話：${gem.note}` : "這顆寶石沒有留下文字，只留下了那一刻的訊號。";
-  showModal(el.gemDetailModal);
 }
 
 function renderDailyAction(box) {
@@ -392,16 +418,11 @@ function renderDailyAction(box) {
         : box.status === "archived"
           ? "這只木匣已經封存。"
           : "這一輪觀察已經完成。";
-    el.dailyAction.innerHTML = `
-      <p class="daily-copy">${statusLabel}<br />你可以從下方木匣架切換其他木匣，或新增一只木匣。</p>
-    `;
+    el.dailyAction.innerHTML = `<p class="daily-copy">${statusLabel}<br />你可以從下方木匣架切換其他木匣，或新增一只木匣。</p>`;
     return;
   }
 
-  const todayGem = todaysGem(box);
-  const full = box.gems.length >= box.maxGems;
-
-  if (full) {
+  if (box.gems.length >= box.maxGems) {
     el.dailyAction.innerHTML = `
       <p class="daily-copy">木匣已經裝滿了。這些寶石不是催你離開的命令，而是你一路收集下來的訊號。</p>
       <button class="btn btn-primary" type="button" id="openFullRitual">查看確認儀式</button>
@@ -410,10 +431,8 @@ function renderDailyAction(box) {
     return;
   }
 
-  if (todayGem) {
-    el.dailyAction.innerHTML = `
-      <p class="daily-copy">今天的寶石已經放入木匣。<br />卡德莉絲每天只收一顆，明天再來吧。</p>
-    `;
+  if (todaysGem(box)) {
+    el.dailyAction.innerHTML = `<p class="daily-copy">今天的寶石已經放入木匣。<br />卡德莉絲每天只收一顆，明天再來吧。</p>`;
     return;
   }
 
@@ -424,11 +443,37 @@ function renderDailyAction(box) {
   document.querySelector("#openGemModal").addEventListener("click", openGemModal);
 }
 
-function renderBoxLibrary(username, selectedId) {
-  const owned = userBoxes(username);
+function renderUndo(box) {
+  const latest = box.gems.at(-1);
+  if (!latest) {
+    el.undoPanel.hidden = true;
+    return;
+  }
+
+  if (latest.fixed || Date.now() > new Date(latest.canUndoUntil).getTime()) {
+    el.undoPanel.hidden = false;
+    el.undoPanel.innerHTML = "寶石已經嵌進木匣，今天這一格會被留下。";
+    return;
+  }
+
+  const remaining = Math.max(0, new Date(latest.canUndoUntil).getTime() - Date.now());
+  el.undoPanel.hidden = false;
+  el.undoPanel.innerHTML = `
+    <p>這顆寶石還沒有完全嵌進木匣。<br />5 小時內，如果你改變心意，可以把它取回，放回自己身上。</p>
+    <p>剩餘時間：約 ${Math.ceil(remaining / 60000)} 分鐘</p>
+    <button class="btn btn-ghost" type="button" id="undoGem">取回這顆寶石</button>
+  `;
+  document.querySelector("#undoGem").addEventListener("click", undoGem);
+}
+
+function renderDevPanel(box) {
+  el.devPanel.hidden = !DEV_MODE || box.gems.length >= box.maxGems || box.status !== "active";
+}
+
+function renderBoxLibrary(selectedId) {
   el.boxLibrary.innerHTML = `
     <h3 class="box-library-title">我的木匣</h3>
-    ${owned
+    ${stateBoxes
       .map((box) => {
         const mode = boxModes[box.mode];
         return `
@@ -447,26 +492,6 @@ function renderBoxLibrary(username, selectedId) {
       route();
     });
   });
-}
-
-function renderUndo(box) {
-  const latest = box.gems.at(-1);
-  if (!latest || latest.fixed || Date.now() > new Date(latest.canUndoUntil).getTime()) {
-    el.undoPanel.hidden = !latest;
-    if (latest) {
-      el.undoPanel.innerHTML = "寶石已經嵌進木匣，今天這一格會被留下。";
-    }
-    return;
-  }
-
-  const remaining = Math.max(0, new Date(latest.canUndoUntil).getTime() - Date.now());
-  el.undoPanel.hidden = false;
-  el.undoPanel.innerHTML = `
-    <p>這顆寶石還沒有完全嵌進木匣。<br />5 小時內，如果你改變心意，可以把它取回，放回自己身上。</p>
-    <p>剩餘時間：約 ${Math.ceil(remaining / 60000)} 分鐘</p>
-    <button class="btn btn-ghost" type="button" id="undoGem">取回這顆寶石</button>
-  `;
-  document.querySelector("#undoGem").addEventListener("click", undoGem);
 }
 
 function renderOracle() {
@@ -505,7 +530,7 @@ function openGemModal() {
   showModal(el.gemModal);
 }
 
-function addGem(event) {
+async function addGem(event) {
   event.preventDefault();
   const box = activeBox();
   if (!box || !selectedReason || todaysGem(box)) return;
@@ -515,62 +540,77 @@ function addGem(event) {
       ? el.customReasonInput.value.trim() || "自己填寫"
       : selectedReason.reason;
   const now = new Date();
-  const gem = {
-    id: `gem-${Date.now()}`,
+  const payload = {
+    box_id: box.id,
+    owner_id: authUser.id,
     reason: reasonText,
-    colorType: selectedReason.colorType,
+    color_type: selectedReason.colorType,
     note: el.gemNote.value.trim(),
-    createdAt: now.toISOString(),
-    canUndoUntil: new Date(now.getTime() + FIVE_HOURS).toISOString(),
+    created_at: now.toISOString(),
+    can_undo_until: new Date(now.getTime() + FIVE_HOURS).toISOString(),
     fixed: false,
   };
 
-  box.gems.push(gem);
-  saveBox(box);
+  const { error } = await supabaseClient.from("caderis_gems").insert(payload);
+  if (error) {
+    showToast("寶石放入失敗，請稍後再試。");
+    return;
+  }
+
   closeModal(el.gemModal);
+  await loadBoxes();
   showToast("卡德莉絲收下了這顆寶石。");
-  renderMain(currentUser(), box);
+  route();
 }
 
-function undoGem() {
+async function undoGem() {
   const box = activeBox();
-  if (!box) return;
-  const latest = box.gems.at(-1);
+  const latest = box?.gems.at(-1);
   if (!latest || latest.fixed || Date.now() > new Date(latest.canUndoUntil).getTime()) return;
-  box.gems.pop();
-  saveBox(box);
+
+  const { error } = await supabaseClient.from("caderis_gems").delete().eq("id", latest.id);
+  if (error) {
+    showToast("寶石暫時取不回來，請稍後再試。");
+    return;
+  }
+
+  await loadBoxes();
   showToast("寶石已回到你身上。");
-  renderMain(currentUser(), box);
+  route();
 }
 
-function handleFullChoice(event) {
+async function handleFullChoice(event) {
   event.preventDefault();
-  const submitter = event.submitter;
-  const choice = submitter?.value;
+  const choice = event.submitter?.value;
   const box = activeBox();
   if (!box || !choice) return;
 
   if (choice === "observe") {
-    const oldBox = { ...box, status: "completed" };
-    const newBox = {
-      ...box,
-      id: `box-${Date.now()}`,
-      gems: [],
-      status: "active",
-      createdAt: new Date().toISOString(),
-    };
-    replaceBoxes([oldBox, newBox]);
-    localStorage.setItem(SELECTED_BOX_KEY, newBox.id);
+    await supabaseClient.from("caderis_boxes").update({ status: "completed" }).eq("id", box.id);
+    const { data: newBox, error } = await supabaseClient
+      .from("caderis_boxes")
+      .insert({
+        owner_id: authUser.id,
+        title: box.title,
+        target_type: box.targetType,
+        alias: box.alias,
+        mode: box.mode,
+        max_gems: box.maxGems,
+        status: "active",
+      })
+      .select()
+      .single();
+    if (!error) localStorage.setItem(SELECTED_BOX_KEY, newBox.id);
     closeModal(el.fullModal);
+    await loadBoxes();
     showToast("卡德莉絲替你換上一只新的木匣。");
     route();
     return;
   }
 
-  box.status = choice;
-  saveBox(box);
-  selectFallbackBox(box.ownerUsername, box.id);
+  await supabaseClient.from("caderis_boxes").update({ status: choice }).eq("id", box.id);
   closeModal(el.fullModal);
+  await loadBoxes();
   showToast(choice === "packed" ? "木匣已被緞帶打包。" : "木匣已封上蠟印。");
   route();
 }
@@ -582,7 +622,7 @@ function openDeleteBoxModal() {
   showModal(el.deleteBoxModal);
 }
 
-function confirmDeleteBox(event) {
+async function confirmDeleteBox(event) {
   event.preventDefault();
   if (event.submitter?.value !== "delete") {
     closeModal(el.deleteBoxModal);
@@ -591,66 +631,82 @@ function confirmDeleteBox(event) {
 
   const box = selectedBox();
   if (!box) return;
-  write(BOXES_KEY, boxes().filter((entry) => entry.id !== box.id));
-  selectFallbackBox(box.ownerUsername, box.id);
+  const { error } = await supabaseClient.from("caderis_boxes").delete().eq("id", box.id);
+  if (error) {
+    showToast("木匣刪除失敗，請稍後再試。");
+    return;
+  }
+
+  localStorage.removeItem(SELECTED_BOX_KEY);
   closeModal(el.deleteBoxModal);
+  await loadBoxes();
   showToast("卡德莉絲已替你移除那只木匣。");
   route();
 }
 
-function selectFallbackBox(username, removedId) {
-  const next = boxes().find((box) => box.ownerUsername === username && box.id !== removedId);
-  if (next) {
-    localStorage.setItem(SELECTED_BOX_KEY, next.id);
-  } else {
-    localStorage.removeItem(SELECTED_BOX_KEY);
-  }
-}
-
-function fillBoxForTest() {
+async function fillBoxForTest() {
   const box = activeBox();
   if (!box) return;
 
-  while (box.gems.length < box.maxGems) {
-    const reason = reasons[box.gems.length % reasons.length];
-    const createdAt = new Date(Date.now() - box.gems.length * 24 * 60 * 60 * 1000);
-    box.gems.push({
-      id: `test-gem-${Date.now()}-${box.gems.length}`,
+  const payloads = [];
+  while (box.gems.length + payloads.length < box.maxGems) {
+    const reason = reasons[(box.gems.length + payloads.length) % reasons.length];
+    const createdAt = new Date(Date.now() - payloads.length * 24 * 60 * 60 * 1000);
+    payloads.push({
+      box_id: box.id,
+      owner_id: authUser.id,
       reason: reason.reason === "自己填寫" ? "開發測試" : reason.reason,
-      colorType: reason.colorType,
+      color_type: reason.colorType,
       note: "這是開發階段用來測試滿匣儀式的寶石。",
-      createdAt: createdAt.toISOString(),
-      canUndoUntil: new Date(createdAt.getTime() + FIVE_HOURS).toISOString(),
+      created_at: createdAt.toISOString(),
+      can_undo_until: new Date(createdAt.getTime() + FIVE_HOURS).toISOString(),
       fixed: true,
     });
   }
 
-  saveBox(box);
+  if (payloads.length) await supabaseClient.from("caderis_gems").insert(payloads);
+  await loadBoxes();
   showToast("測試寶石已補滿木匣。");
-  renderMain(currentUser(), box);
+  route();
 }
 
-function refreshBox(box) {
+function showGemDetail(gem) {
+  const reason = reasons.find((entry) => entry.colorType === gem.colorType) || reasons.at(-1);
+  el.gemDetailStone.style.setProperty("--gem-color", reason.color);
+  el.gemDetailStone.style.setProperty("--gem-glow", reason.glow);
+  el.gemDetailReason.textContent = `原因：${gem.reason}｜${reason.stone}`;
+  el.gemDetailTime.textContent = `放入時間：${formatDateTime(gem.createdAt)}`;
+  el.gemDetailNote.textContent = gem.note ? `留下的話：${gem.note}` : "這顆寶石沒有留下文字，只留下了那一刻的訊號。";
+  showModal(el.gemDetailModal);
+}
+
+function normalizeBox(box) {
   return {
-    ...box,
-    gems: box.gems.map((gem) => ({
-      ...gem,
-      fixed: gem.fixed || Date.now() > new Date(gem.canUndoUntil).getTime(),
-    })),
+    id: box.id,
+    ownerId: box.owner_id,
+    title: box.title,
+    targetType: box.target_type,
+    alias: box.alias,
+    mode: box.mode,
+    maxGems: box.max_gems,
+    status: box.status,
+    createdAt: box.created_at,
+    gems: box.gems || [],
   };
 }
 
-function saveBox(box) {
-  const next = boxes().map((entry) => (entry.id === box.id ? refreshBox(box) : entry));
-  write(BOXES_KEY, next);
-}
-
-function replaceBoxes(replacements) {
-  const ids = new Set(replacements.map((box) => box.id));
-  const owner = replacements[0]?.ownerUsername;
-  const kept = boxes().filter((box) => box.ownerUsername !== owner || !ids.has(box.id));
-  const withoutActive = kept.filter((box) => !(box.ownerUsername === owner && box.status === "active"));
-  write(BOXES_KEY, [...withoutActive, ...replacements]);
+function normalizeGem(gem) {
+  return {
+    id: gem.id,
+    boxId: gem.box_id,
+    ownerId: gem.owner_id,
+    reason: gem.reason,
+    colorType: gem.color_type,
+    note: gem.note || "",
+    createdAt: gem.created_at,
+    canUndoUntil: gem.can_undo_until,
+    fixed: gem.fixed || Date.now() > new Date(gem.can_undo_until).getTime(),
+  };
 }
 
 function todaysGem(box) {
@@ -705,15 +761,6 @@ function setupPasswordToggles() {
       button.setAttribute("aria-label", visible ? "顯示密語" : "隱藏密語");
     });
   });
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function showModal(modal) {
@@ -783,6 +830,15 @@ function setupMusic() {
       window.addEventListener("pointerdown", startAfterFirstTouch, { once: true });
       window.addEventListener("keydown", startAfterFirstTouch, { once: true });
     });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 boot();
