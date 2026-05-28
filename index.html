@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="卡德莉絲小屋是一個手機優先的情緒訊號紀錄網站，用寶石與木匣保存那些想離開的瞬間。"
+    />
+    <title>卡德莉絲小屋</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="stars" aria-hidden="true"></div>
+
+    <button class="sound-toggle" id="soundToggle" type="button" aria-label="播放背景音樂">🔇</button>
+    <audio id="bgMusic" src="assets/music.mp3" loop autoplay preload="auto" playsinline></audio>
+
+    <main class="shell">
+      <section class="section welcome-section is-active" id="welcomeSection" aria-labelledby="welcomeTitle">
+        <div class="tarot-card welcome-card">
+          <div class="card-ornaments" aria-hidden="true">
+            <span class="ornament ornament-top">✦ ☾ ✦</span>
+            <span class="ornament ornament-left">◇<br />◇<br />◇</span>
+            <span class="ornament ornament-right">◇<br />◇<br />◇</span>
+            <span class="ornament ornament-bottom">✧ ◆ ✧</span>
+          </div>
+          <div class="moon-mark" aria-hidden="true">☼</div>
+          <p class="eyebrow">Caderys Cottage</p>
+          <h1 id="welcomeTitle">卡德莉絲小屋</h1>
+          <p class="tagline">給自己一次選擇的機會</p>
+          <div class="divider" aria-hidden="true"></div>
+          <div class="intro-lines" id="introText"></div>
+          <p class="exit-message" id="exitMessage" hidden>
+            卡德莉絲輕輕關上門。<br />
+            如果哪天你又想起這裡，門會再次為你打開。
+          </p>
+          <div class="actions">
+            <button class="btn btn-primary" id="enterButton" type="button">我想進去看看</button>
+            <button class="btn btn-ghost" id="leaveButton" type="button">路過的請左轉出口</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section auth-section" id="authSection" aria-labelledby="authTitle">
+        <div class="panel">
+          <p class="eyebrow">Identity</p>
+          <h2 id="authTitle">進入小屋前</h2>
+          <p class="lead">
+            首先，進入小屋前，<br />
+            先幫你穿上新的身分，不必是本名，能放心不被任何人認出。<br /><br />
+            任何誰都可以... 只要，你是你就行。
+          </p>
+
+          <form class="form is-active" id="registerForm">
+            <label>
+              <span>小屋認證號</span>
+              <input name="username" required autocomplete="username" placeholder="請輸入你的認證號" />
+            </label>
+            <label>
+              <span>登入密語</span>
+              <span class="password-wrap">
+                <input name="password" required minlength="4" type="password" autocomplete="new-password" placeholder="請輸入密語" />
+                <button class="eye-button" type="button" aria-label="顯示密語" data-toggle-password>◐</button>
+              </span>
+            </label>
+            <label>
+              <span>小屋稱呼</span>
+              <input name="nickname" required placeholder="卡德莉絲該怎麼稱呼你？" />
+            </label>
+            <p class="form-message" id="registerMessage"></p>
+            <button class="btn btn-primary" type="submit">建立身分</button>
+            <button class="text-button" id="showLogin" type="button">我已經有身分了</button>
+          </form>
+
+          <form class="form" id="loginForm">
+            <label>
+              <span>小屋認證號</span>
+              <input name="username" required autocomplete="username" placeholder="請輸入你的認證號" />
+            </label>
+            <label>
+              <span>登入密語</span>
+              <span class="password-wrap">
+                <input name="password" required type="password" autocomplete="current-password" placeholder="請輸入密語" />
+                <button class="eye-button" type="button" aria-label="顯示密語" data-toggle-password>◐</button>
+              </span>
+            </label>
+            <p class="form-message" id="loginMessage"></p>
+            <button class="btn btn-primary" type="submit">進入小屋</button>
+            <button class="text-button" id="showRegister" type="button">回到建立身分</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="section create-box-section" id="createBoxSection" aria-labelledby="createBoxTitle">
+        <div class="panel">
+          <button class="text-button back-to-main" id="backToMainButton" type="button" hidden>回到我的木匣</button>
+          <p class="eyebrow">First Box</p>
+          <h2 id="createBoxTitle">領取第一只木匣</h2>
+          <p class="lead">
+            卡德莉絲從木櫃取出三只木匣。<br /><br />
+            卡德莉絲說：「你可以照自己的心意選擇。」<br /><br />
+            她又說：「每顆寶石，都是你閃耀的瞬間。你可以把它好好地收進這個木匣裡，沒人可以傷害到你曾經的努力；你也可以繼續把它帶在身上，繼續滋養著它。」
+          </p>
+
+          <form id="boxForm" class="form is-active">
+            <fieldset class="choice-grid">
+              <legend>選擇木匣</legend>
+              <label class="box-choice">
+                <input type="radio" name="mode" value="short" />
+                <span>
+                  <b>短期木匣｜14 顆寶石</b>
+                  適合短期觀察。如果短短兩週內，這只木匣就被填滿，代表這件事已經不只是偶爾讓你難受。
+                </span>
+              </label>
+              <label class="box-choice">
+                <input type="radio" name="mode" value="standard" checked />
+                <span>
+                  <b>標準木匣｜20 顆寶石</b>
+                  這是卡德莉絲最常發出的木匣。不急著催促你離開，也不允許你假裝沒事。
+                </span>
+              </label>
+              <label class="box-choice">
+                <input type="radio" name="mode" value="long" />
+                <span>
+                  <b>長期木匣｜30 顆寶石</b>
+                  這只木匣比較沉。它適合那些知道離開不是逃跑，而是需要準備的人。
+                </span>
+              </label>
+            </fieldset>
+
+            <label>
+              <span>這只木匣關於</span>
+              <select name="targetType">
+                <option>公司</option>
+                <option>某個人</option>
+                <option>某件事</option>
+                <option>某段關係</option>
+                <option>其他</option>
+              </select>
+            </label>
+            <label>
+              <span>給它一個代稱</span>
+              <input name="alias" required placeholder="建議別填真實名字喔" />
+            </label>
+            <label>
+              <span>木匣名稱</span>
+              <input name="title" required placeholder="例如：那間辦公室、那段關係、那件煩人的事" />
+            </label>
+            <button class="btn btn-primary" type="submit">領取這只木匣</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="section main-section" id="mainSection" aria-labelledby="mainTitle">
+        <header class="cottage-header">
+          <div>
+            <p class="eyebrow">Cottage</p>
+            <h2 id="mainTitle">卡德莉絲小屋</h2>
+          </div>
+          <div class="user-area">
+            <span id="userStatus"></span>
+            <button class="text-button" id="logoutButton" type="button">我要離開</button>
+          </div>
+        </header>
+
+        <article class="box-stage" id="boxStage">
+          <div class="box-toolbar">
+            <button class="btn btn-ghost btn-small" id="addBoxButton" type="button">新增木匣</button>
+            <button class="btn btn-ghost btn-small danger" id="deleteBoxButton" type="button">刪除這只</button>
+          </div>
+          <div class="box-info">
+            <span>這只木匣關於：</span>
+            <h3 id="boxTitle"></h3>
+            <p id="boxMeta"></p>
+            <p id="boxState"></p>
+          </div>
+          <div class="gem-grid" id="gemGrid" aria-label="木匣寶石格"></div>
+        </article>
+
+        <section class="box-library" id="boxLibrary" aria-label="我的木匣"></section>
+
+        <section class="ritual-panel">
+          <div id="dailyAction"></div>
+          <div class="undo-panel" id="undoPanel" hidden></div>
+          <div class="dev-panel" id="devPanel" hidden>
+            <p>開發測試模式：可以快速把目前木匣補滿，用來檢查滿匣儀式。</p>
+            <button class="btn btn-ghost" id="fillBoxTestButton" type="button">測試填滿木匣</button>
+          </div>
+        </section>
+
+        <footer class="oracle-note" id="oracleNote"></footer>
+      </section>
+    </main>
+
+    <dialog class="modal" id="gemModal">
+      <form method="dialog" class="modal-card" id="gemForm">
+        <button class="modal-close" value="cancel" aria-label="關閉">×</button>
+        <p class="eyebrow">A Gem Appears</p>
+        <h2>今天，這顆寶石是因為什麼而出現？</h2>
+        <div class="reason-grid" id="reasonGrid"></div>
+        <label class="custom-reason" id="customReasonWrap" hidden>
+          <span>寫下它的名字</span>
+          <input id="customReasonInput" maxlength="20" placeholder="例如：疲憊、困惑、想哭" />
+        </label>
+        <label class="custom-reason">
+          <span>可選擇留下一句話</span>
+          <textarea id="gemNote" maxlength="120" rows="3" placeholder="這句話只留給此刻的你。"></textarea>
+        </label>
+        <button class="btn btn-primary" id="confirmGem" type="submit" disabled>放入木匣</button>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="fullModal">
+      <form method="dialog" class="modal-card" id="fullForm">
+        <p class="eyebrow">The Box Is Full</p>
+        <h2>木匣已經裝滿了。</h2>
+        <p class="lead">
+          這些寶石不是催你離開的命令，<br />
+          而是你一路收集下來的訊號。<br /><br />
+          現在，你可以打包它，帶著它前往新的地方。<br />
+          也可以先坐下來，再看它一眼。
+        </p>
+        <div class="question-list">
+          <p>這段時間裡，讓你想離開的原因有被改善過嗎？</p>
+          <p>如果明天就離開，你最擔心的是什麼？</p>
+          <p>如果繼續留下，你最害怕的是什麼？</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-primary" value="packed" type="submit">打包木匣</button>
+          <button class="btn btn-ghost" value="observe" type="submit">再觀察一輪</button>
+          <button class="btn btn-ghost" value="archived" type="submit">封存這只木匣</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="gemDetailModal">
+      <form method="dialog" class="modal-card">
+        <button class="modal-close" value="cancel" aria-label="關閉">×</button>
+        <p class="eyebrow">Gem Memory</p>
+        <h2 id="gemDetailTitle">這顆寶石的訊號</h2>
+        <div class="gem-detail">
+          <span class="detail-gem" id="gemDetailStone" aria-hidden="true"></span>
+          <div>
+            <p id="gemDetailReason"></p>
+            <p id="gemDetailTime"></p>
+            <p id="gemDetailNote"></p>
+          </div>
+        </div>
+        <button class="btn btn-primary" value="close" type="submit">我知道了</button>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="deleteBoxModal">
+      <form method="dialog" class="modal-card" id="deleteBoxForm">
+        <button class="modal-close" value="cancel" aria-label="關閉">×</button>
+        <p class="eyebrow">Seal Broken</p>
+        <h2>確定要刪除這只木匣嗎？</h2>
+        <p class="lead" id="deleteBoxCopy">
+          這個動作會連同裡面的寶石一起移除。<br />
+          卡德莉絲會再問你一次：你真的決定好了嗎？
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" value="cancel" type="submit">先留下它</button>
+          <button class="btn btn-primary danger-primary" value="delete" type="submit">確認刪除</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
