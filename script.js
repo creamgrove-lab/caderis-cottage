@@ -189,10 +189,9 @@ function normalizeUsername(username) {
 }
 
 function usernameToEmail(username) {
-  const encoded = btoa(unescape(encodeURIComponent(normalizeUsername(username))))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
+  const encoded = Array.from(new TextEncoder().encode(normalizeUsername(username)))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
   return `u-${encoded}@example.com`;
 }
 
