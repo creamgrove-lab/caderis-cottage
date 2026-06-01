@@ -193,7 +193,7 @@ function usernameToEmail(username) {
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replaceAll("=", "");
-  return `u-${encoded}@caderis-cottage.app`;
+  return `u-${encoded}@example.com`;
 }
 
 function toggleAuth(mode) {

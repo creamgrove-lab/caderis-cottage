@@ -7,7 +7,7 @@
 - `index.html`：頁面結構
 - `style.css`：深色塔羅風格與手機版樣式
 - `script.js`：登入、建立木匣、每日寶石、5 小時取回、滿匣儀式
-- `assets/music.mp3`：可自行放入背景音樂檔，沒有音檔也能正常使用
+- `music.mp3`：可自行放入背景音樂檔，沒有音檔也能正常使用
 
 ## GitHub Pages
 
