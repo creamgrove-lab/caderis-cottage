@@ -136,6 +136,11 @@ function bindEvents() {
   el.leaveButton.addEventListener("click", () => {
     el.introText.hidden = true;
     el.exitMessage.hidden = false;
+    setTimeout(() => {
+      if (window.history.length > 1) {
+        window.history.back();
+      }
+    }, 900);
   });
   el.showLogin.addEventListener("click", () => toggleAuth("login"));
   el.showRegister.addEventListener("click", () => toggleAuth("register"));
@@ -192,7 +197,7 @@ function usernameToEmail(username) {
   const encoded = Array.from(new TextEncoder().encode(normalizeUsername(username)))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-  return `u-${encoded}@example.com`;
+  return `caderis.${encoded}@gmail.com`;
 }
 
 function toggleAuth(mode) {
@@ -221,9 +226,12 @@ async function register(event) {
   });
 
   if (signUpError || !signUpData.user) {
-    el.registerMessage.textContent = signUpError?.message?.toLowerCase().includes("registered")
+    const message = signUpError?.message || "";
+    el.registerMessage.textContent = message.toLowerCase().includes("registered")
       ? "這個小屋認證號已經被使用了。請換一個認證號，或改用登入。"
-      : `建立身分失敗：${signUpError?.message || "請確認密語至少 6 位，並稍後再試。"}`;
+      : message.toLowerCase().includes("invalid")
+        ? "建立身分失敗：認證格式被 Supabase 擋下。請更新新版 script.js 後再試一次。"
+        : `建立身分失敗：${message || "請確認密語至少 6 位，並稍後再試。"}`;
     return;
   }
 
